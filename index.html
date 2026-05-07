@@ -1,0 +1,510 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>感情認識研究 / Emotion Recognition Study</title>
+
+  <!-- jsPsych core + plugins (jsPsych v7, рock solid) -->
+  <script src="https://unpkg.com/jspsych@7.3.4"></script>
+  <script src="https://unpkg.com/@jspsych/plugin-html-button-response@1.2.0"></script>
+  <script src="https://unpkg.com/@jspsych/plugin-html-keyboard-response@1.1.3"></script>
+  <script src="https://unpkg.com/@jspsych/plugin-video-keyboard-response@1.1.3"></script>
+  <script src="https://unpkg.com/@jspsych/plugin-survey-text@1.1.3"></script>
+  <script src="https://unpkg.com/@jspsych/plugin-survey-html-form@1.0.4"></script>
+  <script src="https://unpkg.com/@jspsych/plugin-preload@1.1.3"></script>
+  <script src="https://unpkg.com/@jspsych-contrib/plugin-pipe"></script>
+  <link href="https://unpkg.com/jspsych@7.3.4/css/jspsych.css" rel="stylesheet">
+
+  <style>
+    /* Базовые шрифты — японский с фоллбэком */
+    body, .jspsych-content {
+      font-family: "Yu Gothic", "Meiryo", "Hiragino Sans", "MS Gothic", sans-serif;
+    }
+    .jspsych-content {
+      max-width: 900px;
+    }
+
+    /* Кнопки: белый фон, чёрный текст — стиль из исходного PsychoPy */
+    .jspsych-btn {
+      background-color: #ffffff;
+      color: #000000;
+      border: 1px solid #888;
+      padding: 10px 28px;
+      font-size: 18px;
+      cursor: pointer;
+      border-radius: 4px;
+      margin: 4px 8px;
+    }
+    .jspsych-btn:hover {
+      background-color: #eaeaea;
+    }
+
+    /* Текст согласия и блочного контента — выравнивание по левому краю, читаемая высота строки */
+    .consent-text, .block-text {
+      text-align: left;
+      line-height: 1.7;
+      font-size: 16px;
+      max-width: 760px;
+      margin: 0 auto;
+    }
+    .consent-text h2, .block-text h2 {
+      text-align: center;
+      margin: 0.5em 0 1em;
+    }
+    .consent-text p, .block-text p {
+      margin: 0.7em 0;
+    }
+    .consent-text strong {
+      color: #333;
+    }
+
+    /* Интро-экраны 1回目視聴 / 2回目視聴 — белый текст на чёрном фоне на весь экран */
+    .intro-overlay {
+      position: fixed;
+      inset: 0;
+      background: #000000;
+      color: #ffffff;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      font-size: 64px;
+      font-weight: 500;
+      z-index: 9999;
+      letter-spacing: 0.1em;
+    }
+
+    /* Стили формы анкеты */
+    .demographics {
+      text-align: left;
+      max-width: 720px;
+      margin: 0 auto;
+    }
+    .demographics > label.q-label {
+      display: block;
+      margin: 18px 0 6px;
+      font-weight: bold;
+      font-size: 15px;
+    }
+    .demographics input[type="text"],
+    .demographics input[type="number"] {
+      width: 100%;
+      padding: 8px;
+      font-size: 14px;
+      box-sizing: border-box;
+      border: 1px solid #aaa;
+      border-radius: 3px;
+    }
+    .demographics .options label {
+      display: inline-block;
+      margin: 4px 16px 4px 0;
+      font-weight: normal;
+      cursor: pointer;
+      font-size: 14px;
+    }
+    .demographics .options.vertical label {
+      display: block;
+    }
+    .demographics .hint {
+      font-size: 12px;
+      color: #666;
+      font-style: italic;
+      margin-top: 2px;
+    }
+
+    /* Поле для ответа в trial'е */
+    textarea.response-textarea {
+      width: 100%;
+      min-height: 140px;
+      font-size: 16px;
+      padding: 10px;
+      box-sizing: border-box;
+      border: 1px solid #888;
+      border-radius: 4px;
+      resize: vertical;
+    }
+  </style>
+</head>
+<body></body>
+
+<script>
+// ============================================================================
+// КОНФИГУРАЦИЯ
+// ============================================================================
+
+// ID эксперимента в DataPipe — заменишь после регистрации на pipe.jspsych.org
+const DATAPIPE_EXPERIMENT_ID = "RYpk6mLs7lJ5";
+
+// Пути к видеостимулам (относительно index.html)
+const VIDEO_FILES = Array.from({length: 26}, (_, i) => `stimuli/video${i + 1}.mp4`);
+
+// Универсальный вопрос для всех видео
+const QUESTION_TEXT = "印で示されている人物は、動画の最後でどのように感じていると思いますか？";
+
+// Длительность интро-экранов (мс)
+const INTRO_DURATION_MS = 1500;
+
+// ============================================================================
+// ИНИЦИАЛИЗАЦИЯ
+// ============================================================================
+
+const jsPsych = initJsPsych({
+  show_progress_bar: true,
+  message_progress_bar: "進行状況",
+  on_finish: function() {
+    // На этом этапе данные уже отправлены в DataPipe (см. соответствующий trial)
+  }
+});
+
+// Уникальный ID участника
+const subject_id = jsPsych.randomization.randomID(10);
+const filename = `${subject_id}.csv`;
+jsPsych.data.addProperties({ subject_id: subject_id, study_iteration: 1 });
+
+const timeline = [];
+
+// ============================================================================
+// 1. ПРЕДЗАГРУЗКА ВИДЕО
+// ============================================================================
+
+timeline.push({
+  type: jsPsychPreload,
+  video: VIDEO_FILES,
+  message: '<p style="font-size: 18px;">動画を読み込んでいます。しばらくお待ちください…<br>(Loading videos, please wait…)</p>',
+  show_progress_bar: true,
+  continue_after_error: false
+});
+
+// ============================================================================
+// 2. ИНФОРМИРОВАННОЕ СОГЛАСИЕ
+// ============================================================================
+
+const consent_html = `
+  <div class="consent-text">
+    <h2>同意書（インフォームド・コンセント）</h2>
+
+    <p><strong>研究プロジェクト:</strong> 「日本とロシア両国住民間の感情認識における異文化間相違」</p>
+    <p><strong>実施者:</strong> アンナ・レベヂネツ（国立研究大学高等経済学院・言語学部）<br>
+       <strong>連絡先:</strong> <a href="mailto:explinguistics@gmail.com">explinguistics@gmail.com</a></p>
+
+    <p>本研究の目的は、ロシア語母語話者に対する日本語教育において、実際の使用場面における学習成果を客観的に測定する教育ツールを開発することです。</p>
+
+    <p><strong>実験の内容:</strong> 簡単なアンケートと、26本の短い動画（各15秒〜1分）を使ったテストを行います。所要時間は約1時間です。動画には音声が含まれているため、開始前に音響機器をご確認ください。</p>
+
+    <p><strong>参加の任意性:</strong> 実験への参加は完全に任意です。理由を問わず、いつでもブラウザのタブを閉じて中断していただけます。回答に抵抗がある質問はスキップしてかまいません。</p>
+
+    <p><strong>データの取り扱い:</strong> 収集された情報はすべて匿名化されます。あなたの個人情報が公にされることはありません。研究で得られたデータは、研究グループのみがアクセスできます。</p>
+
+    <p><strong>オープンサイエンス:</strong> オープンサイエンスの原則および Open Science Framework（OSF）の方針に従い、他の研究者が本実験を再現できるようにするため、<strong>動画の内容に関するあなたの匿名化された記述データ</strong>は公開リポジトリで共有される場合があります。<strong>あなた個人を特定できる情報（個人データ）が公開されることはありません。</strong></p>
+
+    <p><strong>同意の確認:</strong> 下のボタンを押すと、強制ではなく自らの意思で行動していること、国立研究大学高等経済学院の個人情報取扱規程および上記のデータ共有方針について同意したことになります。</p>
+
+    <p style="margin-top: 1.5em; font-style: italic;">同意されない場合は、ブラウザのタブを閉じて実験を終了してください。</p>
+  </div>
+`;
+
+timeline.push({
+  type: jsPsychHtmlButtonResponse,
+  stimulus: consent_html,
+  choices: ["同意する"],
+  data: { trial_phase: "consent" }
+});
+
+// ============================================================================
+// 3. ИНСТРУКЦИЯ
+// ============================================================================
+
+timeline.push({
+  type: jsPsychHtmlButtonResponse,
+  stimulus: `
+    <div class="block-text">
+      <h2>実験の進め方</h2>
+      <p>これから26本の短い動画をご覧いただきます。</p>
+      <p>各動画について、以下の流れで進みます:</p>
+      <ol style="margin-left: 1.5em;">
+        <li>「<strong>1回目視聴</strong>」と表示された後、動画が再生されます。</li>
+        <li>続いて「<strong>2回目視聴</strong>」と表示され、同じ動画がもう一度再生されます。</li>
+        <li>動画に登場する人物の感情について自由にご記入いただきます。</li>
+      </ol>
+      <p>視聴後の記述は、できる限り詳しくお答えいただけると助かります。</p>
+      <p>ご質問があれば <a href="mailto:explinguistics@gmail.com">explinguistics@gmail.com</a> までお気軽にどうぞ。</p>
+    </div>
+  `,
+  choices: ["次へ"],
+  data: { trial_phase: "instruction" }
+});
+
+// ============================================================================
+// 4. ОБЩИЙ ВОПРОС (одинаковый для всех видео)
+// ============================================================================
+
+timeline.push({
+  type: jsPsychHtmlButtonResponse,
+  stimulus: `
+    <div class="block-text" style="text-align: center;">
+      <h2>質問</h2>
+      <p style="font-size: 22px; line-height: 1.6; margin-top: 2em;">${QUESTION_TEXT}</p>
+      <p style="margin-top: 2em;">準備ができたら「次へ」を押してください。</p>
+    </div>
+  `,
+  choices: ["次へ"],
+  data: { trial_phase: "question" }
+});
+
+// ============================================================================
+// 5. 26 TRIAL'ОВ (рандомизированный порядок)
+// ============================================================================
+
+const trial_items = jsPsych.randomization.shuffle(
+  VIDEO_FILES.map((file, i) => ({ video_file: file, item_id: i + 1 }))
+);
+
+trial_items.forEach((item, idx) => {
+  // 5.1 Интро 1: "1回目視聴" на 1.5 сек
+  timeline.push({
+    type: jsPsychHtmlKeyboardResponse,
+    stimulus: '<div class="intro-overlay">1回目視聴</div>',
+    choices: "NO_KEYS",
+    trial_duration: INTRO_DURATION_MS,
+    data: {
+      trial_phase: "intro_first",
+      item_id: item.item_id,
+      sequence_position: idx + 1
+    }
+  });
+
+  // 5.2 Видео — первый показ
+  timeline.push({
+    type: jsPsychVideoKeyboardResponse,
+    stimulus: [item.video_file],
+    width: 800,
+    autoplay: true,
+    response_allowed_while_playing: false,
+    response_ends_trial: false,
+    trial_ends_after_video: true,
+    choices: "NO_KEYS",
+    data: {
+      trial_phase: "video_first",
+      item_id: item.item_id,
+      video_file: item.video_file,
+      sequence_position: idx + 1
+    }
+  });
+
+  // 5.3 Интро 2: "2回目視聴" на 1.5 сек
+  timeline.push({
+    type: jsPsychHtmlKeyboardResponse,
+    stimulus: '<div class="intro-overlay">2回目視聴</div>',
+    choices: "NO_KEYS",
+    trial_duration: INTRO_DURATION_MS,
+    data: {
+      trial_phase: "intro_second",
+      item_id: item.item_id,
+      sequence_position: idx + 1
+    }
+  });
+
+  // 5.4 Видео — второй показ
+  timeline.push({
+    type: jsPsychVideoKeyboardResponse,
+    stimulus: [item.video_file],
+    width: 800,
+    autoplay: true,
+    response_allowed_while_playing: false,
+    response_ends_trial: false,
+    trial_ends_after_video: true,
+    choices: "NO_KEYS",
+    data: {
+      trial_phase: "video_second",
+      item_id: item.item_id,
+      video_file: item.video_file,
+      sequence_position: idx + 1
+    }
+  });
+
+  // 5.5 Поле ответа
+  timeline.push({
+    type: jsPsychSurveyText,
+    preamble: `
+      <div class="block-text">
+        <p style="font-size: 18px; text-align: center; margin-bottom: 20px;">${QUESTION_TEXT}</p>
+        <p style="font-size: 13px; color: #666; text-align: center;">動画 ${idx + 1} / ${trial_items.length}</p>
+      </div>
+    `,
+    questions: [{
+      prompt: "",
+      rows: 7,
+      columns: 60,
+      required: true,
+      placeholder: "ここに回答をご記入ください…",
+      name: "response"
+    }],
+    button_label: "次へ",
+    data: {
+      trial_phase: "response",
+      item_id: item.item_id,
+      video_file: item.video_file,
+      sequence_position: idx + 1
+    }
+  });
+});
+
+// ============================================================================
+// 6. ДЕМОГРАФИЧЕСКАЯ АНКЕТА
+// ============================================================================
+
+const demographics_html = `
+  <div class="demographics">
+    <p style="font-style: italic; text-align: center; margin-bottom: 1.5em;">
+      実験の最後に、簡単なアンケートにご協力ください。<br>
+      これらの情報は研究結果の分析にのみ使用され、匿名化されます。
+    </p>
+
+    <label class="q-label">1. 年齢（満年齢）</label>
+    <input type="number" name="age" min="18" max="99" required>
+
+    <label class="q-label">2. 性別</label>
+    <div class="options">
+      <label><input type="radio" name="gender" value="male" required> 男性</label>
+      <label><input type="radio" name="gender" value="female"> 女性</label>
+      <label><input type="radio" name="gender" value="other"> その他</label>
+      <label><input type="radio" name="gender" value="no_answer"> 回答しない</label>
+    </div>
+
+    <label class="q-label">3. 母語</label>
+    <input type="text" name="native_language" required placeholder="例: 日本語">
+
+    <label class="q-label">4. 最終学歴</label>
+    <div class="options vertical">
+      <label><input type="radio" name="education" value="middle_school" required> 中学校在学中／卒業</label>
+      <label><input type="radio" name="education" value="high_school"> 高等学校在学中／卒業</label>
+      <label><input type="radio" name="education" value="vocational"> 専門学校・高等専門学校</label>
+      <label><input type="radio" name="education" value="bachelor_in_progress"> 大学在学中</label>
+      <label><input type="radio" name="education" value="bachelor"> 大学卒業（学士）</label>
+      <label><input type="radio" name="education" value="master"> 大学院修了（修士）</label>
+      <label><input type="radio" name="education" value="phd"> 博士号取得</label>
+    </div>
+
+    <label class="q-label">5. 教育年数（小学校から数えた年数）</label>
+    <input type="number" name="education_years" min="0" max="30" required>
+
+    <label class="q-label">6. 専門・職業分野</label>
+    <input type="text" name="profession" required placeholder="例: 教育、エンジニアリング、医療など">
+
+    <label class="q-label">7. 出身地（18歳までに最も長く過ごした地方）</label>
+    <div class="options">
+      <label><input type="radio" name="hometown" value="hokkaido" required> 北海道</label>
+      <label><input type="radio" name="hometown" value="tohoku"> 東北</label>
+      <label><input type="radio" name="hometown" value="kanto"> 関東</label>
+      <label><input type="radio" name="hometown" value="chubu"> 中部</label>
+      <label><input type="radio" name="hometown" value="kansai"> 近畿</label>
+      <label><input type="radio" name="hometown" value="chugoku"> 中国</label>
+      <label><input type="radio" name="hometown" value="shikoku"> 四国</label>
+      <label><input type="radio" name="hometown" value="kyushu"> 九州</label>
+      <label><input type="radio" name="hometown" value="okinawa"> 沖縄</label>
+      <label><input type="radio" name="hometown" value="abroad"> 海外</label>
+    </div>
+
+    <label class="q-label">8. 現在の居住地</label>
+    <div class="options">
+      <label><input type="radio" name="current_residence" value="hokkaido" required> 北海道</label>
+      <label><input type="radio" name="current_residence" value="tohoku"> 東北</label>
+      <label><input type="radio" name="current_residence" value="kanto"> 関東</label>
+      <label><input type="radio" name="current_residence" value="chubu"> 中部</label>
+      <label><input type="radio" name="current_residence" value="kansai"> 近畿</label>
+      <label><input type="radio" name="current_residence" value="chugoku"> 中国</label>
+      <label><input type="radio" name="current_residence" value="shikoku"> 四国</label>
+      <label><input type="radio" name="current_residence" value="kyushu"> 九州</label>
+      <label><input type="radio" name="current_residence" value="okinawa"> 沖縄</label>
+      <label><input type="radio" name="current_residence" value="abroad"> 海外</label>
+    </div>
+
+    <label class="q-label">9. 海外での長期滞在経験（3か月以上）</label>
+    <div class="options">
+      <label><input type="radio" name="abroad_experience" value="none" required> なし</label>
+      <label><input type="radio" name="abroad_experience" value="3-12_months"> 3〜12か月</label>
+      <label><input type="radio" name="abroad_experience" value="1-3_years"> 1〜3年</label>
+      <label><input type="radio" name="abroad_experience" value="more_than_3_years"> 3年以上</label>
+    </div>
+    <label class="q-label" style="font-weight: normal; font-style: italic;">滞在先の国・地域（任意）</label>
+    <input type="text" name="abroad_countries" placeholder="例: アメリカ、中国など（経験がある場合のみ）">
+
+    <label class="q-label">10. 日常会話以上のレベルで使える外国語</label>
+    <input type="text" name="foreign_languages" placeholder="例: 英語：上級、中国語：中級（ない場合は「なし」とご記入ください）">
+    <div class="hint">言語名と自己評価レベル（初級・中級・上級・流暢）をご記入ください。</div>
+
+    <label class="q-label">11. 現在の主な活動</label>
+    <div class="options vertical">
+      <label><input type="radio" name="occupation" value="student" required> 学生</label>
+      <label><input type="radio" name="occupation" value="full_time"> フルタイム勤務</label>
+      <label><input type="radio" name="occupation" value="part_time"> パートタイム勤務</label>
+      <label><input type="radio" name="occupation" value="self_employed"> 自営業</label>
+      <label><input type="radio" name="occupation" value="homemaker"> 主婦・主夫</label>
+      <label><input type="radio" name="occupation" value="retired"> 退職</label>
+      <label><input type="radio" name="occupation" value="unemployed"> 休職中</label>
+      <label><input type="radio" name="occupation" value="other"> その他</label>
+    </div>
+
+    <label class="q-label">12. 定期的に（2週間に1回以上）交流している社会的グループ（複数選択可）</label>
+    <div class="options vertical">
+      <label><input type="checkbox" name="social_groups" value="family"> 家族・親族</label>
+      <label><input type="checkbox" name="social_groups" value="work_school"> 職場・学校の同僚</label>
+      <label><input type="checkbox" name="social_groups" value="close_friends"> 親しい友人</label>
+      <label><input type="checkbox" name="social_groups" value="neighbors"> 近所・町内会</label>
+      <label><input type="checkbox" name="social_groups" value="hobby_clubs"> 部活・サークル・趣味の集まり</label>
+      <label><input type="checkbox" name="social_groups" value="religious_local"> 宗教・地域行事</label>
+      <label><input type="checkbox" name="social_groups" value="volunteer"> ボランティア活動</label>
+      <label><input type="checkbox" name="social_groups" value="online_community"> オンライン・コミュニティ</label>
+      <label><input type="checkbox" name="social_groups" value="other"> その他</label>
+    </div>
+  </div>
+`;
+
+timeline.push({
+  type: jsPsychSurveyHtmlForm,
+  preamble: '<h2 style="text-align: center;">スクリーニング・アンケート</h2>',
+  html: demographics_html,
+  button_label: "送信",
+  data: { trial_phase: "demographics" }
+});
+
+// ============================================================================
+// 7. ОТПРАВКА ДАННЫХ В DATAPIPE → OSF
+// ============================================================================
+
+timeline.push({
+  type: jsPsychPipe,
+  action: "save",
+  experiment_id: DATAPIPE_EXPERIMENT_ID,
+  filename: filename,
+  data_string: () => jsPsych.data.get().csv()
+});
+
+// ============================================================================
+// 8. ЭКРАН ЗАВЕРШЕНИЯ
+// ============================================================================
+
+timeline.push({
+  type: jsPsychHtmlKeyboardResponse,
+  stimulus: `
+    <div class="block-text" style="text-align: center;">
+      <h2>ご協力ありがとうございました！</h2>
+      <p>実験は終了しました。</p>
+      <p>あなたの回答は無事に保存されました。</p>
+      <p style="margin-top: 2em; color: #666;">このタブを閉じてください。</p>
+      <p style="margin-top: 2em; font-size: 13px; color: #888;">
+        ご質問・ご連絡先: <a href="mailto:explinguistics@gmail.com">explinguistics@gmail.com</a>
+      </p>
+    </div>
+  `,
+  choices: "NO_KEYS",
+  trial_duration: null
+});
+
+// ============================================================================
+// ЗАПУСК
+// ============================================================================
+
+jsPsych.run(timeline);
+</script>
+</html>
