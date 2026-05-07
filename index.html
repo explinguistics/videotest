@@ -11,7 +11,6 @@
   <script src="https://unpkg.com/@jspsych/plugin-html-keyboard-response@1.1.3"></script>
   <script src="https://unpkg.com/@jspsych/plugin-video-keyboard-response@1.1.3"></script>
   <script src="https://unpkg.com/@jspsych/plugin-survey-text@1.1.3"></script>
-  <script src="https://unpkg.com/@jspsych/plugin-survey-html-form@1.0.4"></script>
   <script src="https://unpkg.com/@jspsych/plugin-preload@1.1.3"></script>
   <script src="https://unpkg.com/@jspsych-contrib/plugin-pipe"></script>
   <link href="https://unpkg.com/jspsych@7.3.4/css/jspsych.css" rel="stylesheet">
@@ -133,7 +132,7 @@
 // ============================================================================
 
 // ID эксперимента в DataPipe — заменишь после регистрации на pipe.jspsych.org
-const DATAPIPE_EXPERIMENT_ID = "RYpk6mLs7lJ5";
+const DATAPIPE_EXPERIMENT_ID = "REPLACE_WITH_YOUR_DATAPIPE_ID";
 
 // Пути к видеостимулам (относительно index.html)
 const VIDEO_FILES = Array.from({length: 26}, (_, i) => `stimuli/video${i + 1}.mp4`);
@@ -151,6 +150,7 @@ const INTRO_DURATION_MS = 1500;
 const jsPsych = initJsPsych({
   show_progress_bar: true,
   message_progress_bar: "進行状況",
+  override_safe_mode: true,  // позволяет file:// тестирование без зависания preload
   on_finish: function() {
     // На этом этапе данные уже отправлены в DataPipe (см. соответствующий trial)
   }
@@ -460,11 +460,50 @@ const demographics_html = `
   </div>
 `;
 
+// Демография: своя HTML-форма + ручной сбор данных через FormData.
+// Это надёжнее, чем отдельный плагин: не требует дополнительных зависимостей.
 timeline.push({
-  type: jsPsychSurveyHtmlForm,
-  preamble: '<h2 style="text-align: center;">スクリーニング・アンケート</h2>',
-  html: demographics_html,
-  button_label: "送信",
+  type: jsPsychHtmlKeyboardResponse,
+  stimulus: `
+    <h2 style="text-align: center;">スクリーニング・アンケート</h2>
+    <form id="demographics-form" onsubmit="return false;">
+      ${demographics_html}
+      <div style="text-align: center; margin: 30px 0;">
+        <button type="button" id="submit-demographics" class="jspsych-btn">送信</button>
+      </div>
+    </form>
+  `,
+  choices: "NO_KEYS",
+  trial_duration: null,
+  on_load: function() {
+    document.getElementById('submit-demographics').addEventListener('click', function() {
+      const form = document.getElementById('demographics-form');
+      // Валидация: HTML5 required-поля
+      if (!form.checkValidity()) {
+        form.reportValidity();
+        return;
+      }
+      // Сбор данных: учитываем checkbox'ы (несколько значений на один name)
+      const formData = new FormData(form);
+      const result = {};
+      for (const [key, value] of formData.entries()) {
+        if (result[key] !== undefined) {
+          if (Array.isArray(result[key])) {
+            result[key].push(value);
+          } else {
+            result[key] = [result[key], value];
+          }
+        } else {
+          result[key] = value;
+        }
+      }
+      // Сериализуем массивы (например, social_groups) в строку через ; для CSV
+      for (const k in result) {
+        if (Array.isArray(result[k])) result[k] = result[k].join('; ');
+      }
+      jsPsych.finishTrial(result);
+    });
+  },
   data: { trial_phase: "demographics" }
 });
 
